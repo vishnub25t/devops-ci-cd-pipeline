@@ -1,0 +1,82 @@
+pipeline {
+    agent any
+
+    tools {
+        nodejs 'node 22.0.0'
+    }
+
+    environment {
+        IMAGE_NAME = "vishnub25t/ci-code-quality"
+        LATEST_TAG = "latest"
+        BUILD_TAG = "${BUILD_NUMBER}"
+    }
+
+    stages {
+
+        stage('Checkout Code') {
+            steps {
+                git branch: 'dev',
+                    credentialsId: 'vishnu25t-github-credentials',
+                    url: 'https://github.com/vishnub25t/jenkins-ci-pipeline.git'
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                sh 'npm install'
+            }
+        }
+
+
+
+
+        stage('Build Docker Image') {
+            steps {
+                sh """
+                docker build -t ${IMAGE_NAME}:${LATEST_TAG} .
+                docker tag ${IMAGE_NAME}:${LATEST_TAG} ${IMAGE_NAME}:${BUILD_TAG}
+                """
+            }
+        }
+
+        stage('Docker Login') {
+            steps {
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'docker-hub-credentials',
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_PASS'
+                    )
+                ]) {
+                    sh '''
+                    echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                    '''
+                }
+            }
+        }
+
+        stage('Push Docker Images') {
+            steps {
+                sh """
+                docker push ${IMAGE_NAME}:${BUILD_TAG}
+                """
+            }
+        }
+
+    }
+
+    post {
+        success {  
+            echo "Pipeline Completed Successfully"
+            echo "Build Number : ${BUILD_NUMBER}"          
+        }
+
+        failure {
+            echo "Pipeline Failed!"
+        }
+
+        always {
+            sh 'docker logout || true'
+        }
+    }
+}
